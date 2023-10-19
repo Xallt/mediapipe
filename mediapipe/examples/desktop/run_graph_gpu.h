@@ -32,17 +32,18 @@
 #include "mediapipe/gpu/gpu_buffer.h"
 #include "mediapipe/gpu/gpu_shared_data_internal.h"
 #include "mediapipe/util/resource_util.h"
-#include "mediapipe/examples/desktop/run_graph_gpu.h"
 
-int main(int argc, char** argv) {
-  google::InitGoogleLogging(argv[0]);
-  absl::ParseCommandLine(argc, argv);
-  absl::Status run_status = RunMPPGraph();
-  if (!run_status.ok()) {
-    ABSL_LOG(ERROR) << "Failed to run the graph: " << run_status.message();
-    return EXIT_FAILURE;
-  } else {
-    ABSL_LOG(INFO) << "Success!";
-  }
-  return EXIT_SUCCESS;
-}
+constexpr char kInputStream[] = "input_video";
+constexpr char kOutputStream[] = "output_video";
+constexpr char kWindowName[] = "MediaPipe";
+
+ABSL_FLAG(std::string, calculator_graph_config_file, "",
+          "Name of file containing text format CalculatorGraphConfig proto.");
+ABSL_FLAG(std::string, input_video_path, "",
+          "Full path of video to load. "
+          "If not provided, attempt to use a webcam.");
+ABSL_FLAG(std::string, output_video_path, "",
+          "Full path of where to save result (.mp4 only). "
+          "If not provided, show result in a window.");
+
+absl::Status RunMPPGraph();
