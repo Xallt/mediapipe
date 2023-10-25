@@ -19,19 +19,7 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/log/absl_log.h"
-#include "mediapipe/framework/calculator_framework.h"
-#include "mediapipe/framework/formats/image_frame.h"
-#include "mediapipe/framework/formats/image_frame_opencv.h"
-#include "mediapipe/framework/port/file_helpers.h"
-#include "mediapipe/framework/port/opencv_highgui_inc.h"
-#include "mediapipe/framework/port/opencv_imgproc_inc.h"
-#include "mediapipe/framework/port/opencv_video_inc.h"
-#include "mediapipe/framework/port/parse_text_proto.h"
-#include "mediapipe/framework/port/status.h"
-#include "mediapipe/gpu/gl_calculator_helper.h"
-#include "mediapipe/gpu/gpu_buffer.h"
-#include "mediapipe/gpu/gpu_shared_data_internal.h"
-#include "mediapipe/util/resource_util.h"
+#include "absl/status/status.h"
 
 constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
