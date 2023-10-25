@@ -61,7 +61,7 @@ cc_library(
 # ex: sudo apt-get install mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
 # (or similar nvidia/amd equivalent)
 cc_library(
-    name="run_graph_main_gpu",
+    name="run_graph_main_gpu_linux",
     srcs=["run_graph_gpu.cc"],
     hdrs=["run_graph_gpu.h"],
     deps = [
@@ -80,13 +80,21 @@ cc_library(
         "//mediapipe/util:resource_util",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/log:absl_log"
     ],
+    alwayslink=1
+)
+cc_binary(
+    name="librun_graph_main_gpu.so",
+    deps=[
+        ":run_graph_main_gpu_linux",
+    ],
+    linkshared=1
 )
 cc_library(
     name = "demo_run_graph_main_gpu",
     srcs = ["demo_run_graph_main_gpu.cc"],
     deps = [
-        ":run_graph_main_gpu",
+        ":run_graph_main_gpu_linux",
     ],
 )
