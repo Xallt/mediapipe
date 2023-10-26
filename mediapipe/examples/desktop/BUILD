@@ -84,10 +84,17 @@ cc_library(
     ],
     alwayslink=1
 )
+
+# TODO: Make a separate target for hand landmark
 cc_binary(
     name="librun_graph_main_gpu.so",
     deps=[
         ":run_graph_main_gpu_linux",
+        "//mediapipe/graphs/hand_tracking:mobile_calculators",
+    ],
+    data = [
+        "//mediapipe/modules/hand_landmark:hand_landmark_full.tflite",
+        "//mediapipe/modules/palm_detection:palm_detection_full.tflite",
     ],
     linkshared=1
 )
