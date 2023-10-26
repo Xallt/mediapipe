@@ -37,19 +37,11 @@ constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
 
-ABSL_FLAG(std::string, calculator_graph_config_file, "",
-          "Name of file containing text format CalculatorGraphConfig proto.");
-ABSL_FLAG(std::string, input_video_path, "",
-          "Full path of video to load. "
-          "If not provided, attempt to use a webcam.");
-ABSL_FLAG(std::string, output_video_path, "",
-          "Full path of where to save result (.mp4 only). "
-          "If not provided, show result in a window.");
 
-absl::Status RunMPPGraph() {
+absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
   std::string calculator_graph_config_contents;
   MP_RETURN_IF_ERROR(mediapipe::file::GetContents(
-      absl::GetFlag(FLAGS_calculator_graph_config_file),
+      calculator_graph_config_file,
       &calculator_graph_config_contents));
   ABSL_LOG(INFO) << "Get calculator graph config contents: "
                  << calculator_graph_config_contents;
@@ -69,16 +61,16 @@ absl::Status RunMPPGraph() {
 
   ABSL_LOG(INFO) << "Initialize the camera or load the video.";
   cv::VideoCapture capture;
-  const bool load_video = !absl::GetFlag(FLAGS_input_video_path).empty();
+  const bool load_video = !input_video_path.empty();
   if (load_video) {
-    capture.open(absl::GetFlag(FLAGS_input_video_path));
+    capture.open(input_video_path);
   } else {
     capture.open(0);
   }
   RET_CHECK(capture.isOpened());
 
   cv::VideoWriter writer;
-  const bool save_video = !absl::GetFlag(FLAGS_output_video_path).empty();
+  const bool save_video = !output_video_path.empty();
   if (!save_video) {
     cv::namedWindow(kWindowName, /*flags=WINDOW_AUTOSIZE*/ 1);
 #if (CV_MAJOR_VERSION >= 3) && (CV_MINOR_VERSION >= 2)
@@ -171,7 +163,7 @@ absl::Status RunMPPGraph() {
     if (save_video) {
       if (!writer.isOpened()) {
         ABSL_LOG(INFO) << "Prepare video writer.";
-        writer.open(absl::GetFlag(FLAGS_output_video_path),
+        writer.open(output_video_path,
                     mediapipe::fourcc('a', 'v', 'c', '1'),  // .mp4
                     capture.get(cv::CAP_PROP_FPS), output_frame_mat.size());
         RET_CHECK(writer.isOpened());
