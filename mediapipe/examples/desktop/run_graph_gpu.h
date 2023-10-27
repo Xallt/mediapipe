@@ -14,6 +14,9 @@
 //
 // An example of sending OpenCV webcam frames into a MediaPipe graph.
 // This example requires a linux computer and a GPU with EGL support drivers.
+#ifndef RUN_GRAPH_GPU_H
+#define RUN_GRAPH_GPU_H
+
 #include <cstdlib>
 
 #include "absl/flags/flag.h"
@@ -27,3 +30,5 @@ constexpr char kWindowName[] = "MediaPipe";
 
 
 absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path);
+
+#endif // RUN_GRAPH_GPU_H
