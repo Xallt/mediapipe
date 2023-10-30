@@ -25,13 +25,13 @@
 #include "absl/log/absl_log.h"
 #include "absl/status/status.h"
 
-constexpr char kInputStream[] = "input_video";
-constexpr char kOutputStream[] = "output_video";
-constexpr char kWindowName[] = "MediaPipe";
-
-absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path);
-
+class SimpleMPPGraphRunner {
+public:
+    SimpleMPPGraphRunner();
+    absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path);
+};
 class SimpleVideoReader {
+public:
    SimpleVideoReader();
    ~SimpleVideoReader();
    absl::Status init(std::string url, bool flipFrame = false);
@@ -39,6 +39,9 @@ class SimpleVideoReader {
    double getFPS();
    void setFPS(double fps);
    void setResolution(int width, int height);
+private:
+    cv::VideoCapture capture;
+    bool flipFrame;
 };
 
 #endif // RUN_GRAPH_GPU_H

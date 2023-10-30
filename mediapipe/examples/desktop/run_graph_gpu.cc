@@ -33,6 +33,8 @@
 #include "mediapipe/gpu/gpu_shared_data_internal.h"
 #include "mediapipe/util/resource_util.h"
 
+#include "run_graph_gpu.h"
+
 constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
@@ -52,64 +54,75 @@ absl::Status CreateGraphFromFile(std::string calculator_graph_config_file, media
 }
 
 // SimpleVideoWrapper class for video input from webcam / video file
-class SimpleVideoReader {
-  public:
-    SimpleVideoReader() {}
-    ~SimpleVideoReader() {
-      if (capture.isOpened()) capture.release();
-    }
-    absl::Status init(std::string url, bool flipFrame = false) {
-      if (url == "0")
+SimpleVideoReader::SimpleVideoReader() {}
+
+SimpleVideoReader::~SimpleVideoReader() {
+    if (capture.isOpened()) capture.release();
+}
+
+absl::Status SimpleVideoReader::init(std::string url, bool flipFrame) {
+    if (url == "0")
         capture.open(0);
-      else
+    else
         capture.open(url);
-      RET_CHECK(capture.isOpened());
-      flipFrame = flipFrame;
-      return absl::OkStatus();
+    
+    if (!capture.isOpened()) {
+        return absl::InternalError(
+            absl::StrCat("Failed to open video capture for URL: ", url));
     }
-    absl::Status getFrame(cv::Mat &frame) {
-      bool ret = capture.read(frame);
-      cv::cvtColor(frame, frame, cv::COLOR_BGR2RGBA);
-      RET_CHECK(ret);
-      if (flipFrame) cv::flip(frame, frame, 1);
-      return absl::OkStatus();
-    }
-    double getFPS() {
-      return capture.get(cv::CAP_PROP_FPS);
-    }
-    void setFPS(double fps) {
-      capture.set(cv::CAP_PROP_FPS, fps);
-    }
-    void setResolution(int width, int height) {
-      capture.set(cv::CAP_PROP_FRAME_WIDTH, width);
-      capture.set(cv::CAP_PROP_FRAME_HEIGHT, height);
-    }
-  private:
-    cv::VideoCapture capture;
-    bool flipFrame;
-};
 
-absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
-  ABSL_LOG(INFO) << "Initialize the calculator graph.";
-  mediapipe::CalculatorGraph graph;
-  MP_RETURN_IF_ERROR(CreateGraphFromFile(calculator_graph_config_file, graph));
+    this->flipFrame = flipFrame;
+    return absl::OkStatus();
+}
 
-  ABSL_LOG(INFO) << "Initialize the GPU.";
-  MP_ASSIGN_OR_RETURN(auto gpu_resources, mediapipe::GpuResources::Create());
-  MP_RETURN_IF_ERROR(graph.SetGpuResources(std::move(gpu_resources)));
-  mediapipe::GlCalculatorHelper gpu_helper;
-  gpu_helper.InitializeForTest(graph.GetGpuResources().get());
+absl::Status SimpleVideoReader::getFrame(cv::Mat &frame) {
+    bool ret = capture.read(frame);
+    cv::cvtColor(frame, frame, cv::COLOR_BGR2RGBA);
+    if (!ret) {
+        return absl::InternalError("Failed to read frame from capture.");
+    }
+    
+    if (flipFrame) cv::flip(frame, frame, 1);
+    return absl::OkStatus();
+}
 
-  ABSL_LOG(INFO) << "Initialize the camera or load the video.";
-  if (input_video_path.empty())
-    input_video_path = "0";
-  SimpleVideoReader capture;
-  MP_RETURN_IF_ERROR(capture.init(input_video_path, input_video_path == "0"));
+double SimpleVideoReader::getFPS() {
+    return capture.get(cv::CAP_PROP_FPS);
+}
 
-  cv::VideoWriter writer;
-  const bool save_video = !output_video_path.empty();
-  if (!save_video) {
-    cv::namedWindow(kWindowName, /*flags=WINDOW_AUTOSIZE*/ 1);
+void SimpleVideoReader::setFPS(double fps) {
+    capture.set(cv::CAP_PROP_FPS, fps);
+}
+
+void SimpleVideoReader::setResolution(int width, int height) {
+    capture.set(cv::CAP_PROP_FRAME_WIDTH, width);
+    capture.set(cv::CAP_PROP_FRAME_HEIGHT, height);
+}
+
+    SimpleMPPGraphRunner::SimpleMPPGraphRunner() {}
+    absl::Status SimpleMPPGraphRunner::RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+        ABSL_LOG(INFO) << "Initialize the calculator graph.";
+
+        mediapipe::CalculatorGraph graph;
+        MP_RETURN_IF_ERROR(CreateGraphFromFile(calculator_graph_config_file, graph));
+
+        ABSL_LOG(INFO) << "Initialize the GPU.";
+        MP_ASSIGN_OR_RETURN(auto gpu_resources, mediapipe::GpuResources::Create());
+        MP_RETURN_IF_ERROR(graph.SetGpuResources(std::move(gpu_resources)));
+
+        mediapipe::GlCalculatorHelper gpu_helper;
+        gpu_helper.InitializeForTest(graph.GetGpuResources().get());
+
+        ABSL_LOG(INFO) << "Initialize the camera or load the video.";
+        if (input_video_path.empty())
+            input_video_path = "0";
+        SimpleVideoReader capture;
+        MP_RETURN_IF_ERROR(capture.init(input_video_path, input_video_path == "0"));
+
+        cv::VideoWriter writer;
+        const bool save_video = !output_video_path.empty();
+        if (!save_video) {
+            cv::namedWindow(kWindowName, /*flags=WINDOW_AUTOSIZE*/ 1);
 #if (CV_MAJOR_VERSION >= 3) && (CV_MINOR_VERSION >= 2)
     capture.setResolution(640, 480);
     capture.setFPS(30);
@@ -140,7 +153,7 @@ absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string i
         (double)cv::getTickCount() / (double)cv::getTickFrequency() * 1e6;
     MP_RETURN_IF_ERROR(
         gpu_helper.RunInGlContext([&input_frame, &frame_timestamp_us, &graph,
-                                   &gpu_helper]() -> absl::Status {
+                                  &gpu_helper]() -> absl::Status {
             // Convert ImageFrame to GpuBuffer.
             auto texture = gpu_helper.CreateSourceTexture(*input_frame.get());
             auto gpu_frame = texture.GetFrame<mediapipe::GpuBuffer>();
@@ -179,7 +192,7 @@ absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string i
                 const auto info = mediapipe::GlTextureInfoForGpuBufferFormat(
                     gpu_frame.format(), 0, gpu_helper.GetGlVersion());
                 glReadPixels(0, 0, texture.width(), texture.height(), info.gl_format,
-                             info.gl_type, output_frame->MutablePixelData());
+                            info.gl_type, output_frame->MutablePixelData());
                 glFlush();
                 texture.Release();
                 return absl::OkStatus();
@@ -214,4 +227,4 @@ absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string i
   if (writer.isOpened()) writer.release();
   MP_RETURN_IF_ERROR(graph.CloseInputStream(kInputStream));
   return graph.WaitUntilDone();
-}
+    }
