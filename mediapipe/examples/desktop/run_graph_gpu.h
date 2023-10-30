@@ -18,6 +18,7 @@
 #define RUN_GRAPH_GPU_H
 
 #include <cstdlib>
+#include <string>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
@@ -28,7 +29,16 @@ constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
 
-
 absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path);
+
+class SimpleVideoReader {
+   SimpleVideoReader();
+   ~SimpleVideoReader();
+   absl::Status init(std::string url, bool flipFrame = false);
+   absl::Status getFrame(cv::Mat &frame);
+   double getFPS();
+   void setFPS(double fps);
+   void setResolution(int width, int height);
+};
 
 #endif // RUN_GRAPH_GPU_H

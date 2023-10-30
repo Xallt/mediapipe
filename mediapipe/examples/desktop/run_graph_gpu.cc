@@ -37,21 +37,62 @@ constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
 
-
-absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+absl::Status CreateGraphFromFile(std::string calculator_graph_config_file, mediapipe::CalculatorGraph &graph) {
   std::string calculator_graph_config_contents;
   MP_RETURN_IF_ERROR(mediapipe::file::GetContents(
       calculator_graph_config_file,
       &calculator_graph_config_contents));
-  ABSL_LOG(INFO) << "Get calculator graph config contents: "
-                 << calculator_graph_config_contents;
   mediapipe::CalculatorGraphConfig config =
       mediapipe::ParseTextProtoOrDie<mediapipe::CalculatorGraphConfig>(
           calculator_graph_config_contents);
 
+  MP_RETURN_IF_ERROR(graph.Initialize(config));
+  
+  return absl::OkStatus();
+}
+
+// SimpleVideoWrapper class for video input from webcam / video file
+class SimpleVideoReader {
+  public:
+    SimpleVideoReader() {}
+    ~SimpleVideoReader() {
+      if (capture.isOpened()) capture.release();
+    }
+    absl::Status init(std::string url, bool flipFrame = false) {
+      if (url == "0")
+        capture.open(0);
+      else
+        capture.open(url);
+      RET_CHECK(capture.isOpened());
+      flipFrame = flipFrame;
+      return absl::OkStatus();
+    }
+    absl::Status getFrame(cv::Mat &frame) {
+      bool ret = capture.read(frame);
+      cv::cvtColor(frame, frame, cv::COLOR_BGR2RGBA);
+      RET_CHECK(ret);
+      if (flipFrame) cv::flip(frame, frame, 1);
+      return absl::OkStatus();
+    }
+    double getFPS() {
+      return capture.get(cv::CAP_PROP_FPS);
+    }
+    void setFPS(double fps) {
+      capture.set(cv::CAP_PROP_FPS, fps);
+    }
+    void setResolution(int width, int height) {
+      capture.set(cv::CAP_PROP_FRAME_WIDTH, width);
+      capture.set(cv::CAP_PROP_FRAME_HEIGHT, height);
+    }
+  private:
+    cv::VideoCapture capture;
+    bool flipFrame;
+};
+
+absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
   ABSL_LOG(INFO) << "Initialize the calculator graph.";
   mediapipe::CalculatorGraph graph;
-  MP_RETURN_IF_ERROR(graph.Initialize(config));
+  MP_RETURN_IF_ERROR(CreateGraphFromFile(calculator_graph_config_file, graph));
 
   ABSL_LOG(INFO) << "Initialize the GPU.";
   MP_ASSIGN_OR_RETURN(auto gpu_resources, mediapipe::GpuResources::Create());
@@ -60,23 +101,18 @@ absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string i
   gpu_helper.InitializeForTest(graph.GetGpuResources().get());
 
   ABSL_LOG(INFO) << "Initialize the camera or load the video.";
-  cv::VideoCapture capture;
-  const bool load_video = !input_video_path.empty();
-  if (load_video) {
-    capture.open(input_video_path);
-  } else {
-    capture.open(0);
-  }
-  RET_CHECK(capture.isOpened());
+  if (input_video_path.empty())
+    input_video_path = "0";
+  SimpleVideoReader capture;
+  MP_RETURN_IF_ERROR(capture.init(input_video_path, input_video_path == "0"));
 
   cv::VideoWriter writer;
   const bool save_video = !output_video_path.empty();
   if (!save_video) {
     cv::namedWindow(kWindowName, /*flags=WINDOW_AUTOSIZE*/ 1);
 #if (CV_MAJOR_VERSION >= 3) && (CV_MINOR_VERSION >= 2)
-    capture.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-    capture.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-    capture.set(cv::CAP_PROP_FPS, 30);
+    capture.setResolution(640, 480);
+    capture.setFPS(30);
 #endif
   }
 
@@ -89,21 +125,8 @@ absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string i
   bool grab_frames = true;
   while (grab_frames) {
     // Capture opencv camera or video frame.
-    cv::Mat camera_frame_raw;
-    capture >> camera_frame_raw;
-    if (camera_frame_raw.empty()) {
-      if (!load_video) {
-        ABSL_LOG(INFO) << "Ignore empty frames from camera.";
-        continue;
-      }
-      ABSL_LOG(INFO) << "Empty frame, end of video reached.";
-      break;
-    }
     cv::Mat camera_frame;
-    cv::cvtColor(camera_frame_raw, camera_frame, cv::COLOR_BGR2RGBA);
-    if (!load_video) {
-      cv::flip(camera_frame, camera_frame, /*flipcode=HORIZONTAL*/ 1);
-    }
+    MP_RETURN_IF_ERROR(capture.getFrame(camera_frame));
 
     // Wrap Mat into an ImageFrame.
     auto input_frame = absl::make_unique<mediapipe::ImageFrame>(
@@ -175,7 +198,7 @@ absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string i
         ABSL_LOG(INFO) << "Prepare video writer.";
         writer.open(output_video_path,
                     mediapipe::fourcc('a', 'v', 'c', '1'),  // .mp4
-                    capture.get(cv::CAP_PROP_FPS), output_frame_mat.size());
+                    capture.getFPS(), output_frame_mat.size());
         RET_CHECK(writer.isOpened());
       }
       writer.write(output_frame_mat);
