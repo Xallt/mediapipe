@@ -38,7 +38,6 @@
 // include for cv::Mat and cv::Capture
 #include <opencv2/opencv.hpp>
 
-
 constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
@@ -117,8 +116,65 @@ class MPPGraphRunner {
                             graph.AddOutputStreamPoller(kOutputStream));
         poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(poller_tmp));
         MP_RETURN_IF_ERROR(graph.StartRun({}));
+        return absl::OkStatus();
+    }
+    absl::Status ProcessFrame(cv::Mat &camera_frame, size_t frame_timestamp_us, cv::Mat &output_frame_mat) {
+        auto input_frame = absl::make_unique<mediapipe::ImageFrame>(
+            mediapipe::ImageFormat::SRGBA, camera_frame.cols, camera_frame.rows,
+            mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
+        cv::Mat input_frame_mat = mediapipe::formats::MatView(input_frame.get());
+        camera_frame.copyTo(input_frame_mat);
+        MP_RETURN_IF_ERROR(
+            gpu_helper.RunInGlContext([&input_frame, &frame_timestamp_us, this]() -> absl::Status {
+                // Convert ImageFrame to GpuBuffer.
+                auto texture = this->gpu_helper.CreateSourceTexture(*input_frame.get());
+                auto gpu_frame = texture.GetFrame<mediapipe::GpuBuffer>();
+                glFlush();
+                texture.Release();
+                // Send GPU image packet into the graph.
+                // MP_RETURN_IF_ERROR(
+                auto status = this->graph.AddPacketToInputStream(
+                    kInputStream, mediapipe::Adopt(gpu_frame.release())
+                                      .At(mediapipe::Timestamp(frame_timestamp_us)));
+                ABSL_LOG(INFO) << status;
+                // );
+                return absl::OkStatus();
+            }));
+
+        // Get the graph result packet, or stop if that fails.
+        mediapipe::Packet packet;
+        poller->Next(&packet);
+        std::unique_ptr<mediapipe::ImageFrame> output_frame;
+
+        // Convert GpuBuffer to ImageFrame.
+        MP_RETURN_IF_ERROR(
+            gpu_helper.RunInGlContext(
+                [&packet, &output_frame, this]() -> absl::Status {
+                    auto &gpu_frame = packet.Get<mediapipe::GpuBuffer>();
+                    auto texture = this->gpu_helper.CreateSourceTexture(gpu_frame);
+                    output_frame = absl::make_unique<mediapipe::ImageFrame>(
+                        mediapipe::ImageFormatForGpuBufferFormat(gpu_frame.format()),
+                        gpu_frame.width(), gpu_frame.height(),
+                        mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
+                    this->gpu_helper.BindFramebuffer(texture);
+                    const auto info = mediapipe::GlTextureInfoForGpuBufferFormat(
+                        gpu_frame.format(), 0, gpu_helper.GetGlVersion());
+                    glReadPixels(0, 0, texture.width(), texture.height(), info.gl_format,
+                                 info.gl_type, output_frame->MutablePixelData());
+                    glFlush();
+                    texture.Release();
+                    return absl::OkStatus();
+                }));
+
+        // Convert back to opencv for display or saving.
+        output_frame_mat = mediapipe::formats::MatView(output_frame.get());
+        if (output_frame_mat.channels() == 4)
+            cv::cvtColor(output_frame_mat, output_frame_mat, cv::COLOR_RGBA2BGR);
+        else
+            cv::cvtColor(output_frame_mat, output_frame_mat, cv::COLOR_RGB2BGR);
+
 		return absl::OkStatus();
-	}
+    }
     absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
         ABSL_LOG(INFO) << "Initialize&Start the calculator graph.";
         MP_RETURN_IF_ERROR(InitMPPGraph(calculator_graph_config_file));
@@ -146,67 +202,13 @@ class MPPGraphRunner {
             cv::Mat camera_frame;
             MP_RETURN_IF_ERROR(capture.getFrame(camera_frame));
 
-            // Wrap Mat into an ImageFrame.
-            auto input_frame = absl::make_unique<mediapipe::ImageFrame>(
-                mediapipe::ImageFormat::SRGBA, camera_frame.cols, camera_frame.rows,
-                mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
-            cv::Mat input_frame_mat = mediapipe::formats::MatView(input_frame.get());
-            camera_frame.copyTo(input_frame_mat);
-
             // Prepare and add graph input packet.
-            size_t frame_timestamp_us =
-                (double)cv::getTickCount() / (double)cv::getTickFrequency() * 1e6;
-            MP_RETURN_IF_ERROR(
-                gpu_helper.RunInGlContext([&input_frame, &frame_timestamp_us, this]() -> absl::Status {
-                    // Convert ImageFrame to GpuBuffer.
-                    auto texture = this->gpu_helper.CreateSourceTexture(*input_frame.get());
-                    auto gpu_frame = texture.GetFrame<mediapipe::GpuBuffer>();
-                    glFlush();
-                    texture.Release();
-                    // Send GPU image packet into the graph.
-                    // MP_RETURN_IF_ERROR(
-                    auto status = this->graph.AddPacketToInputStream(
-                        kInputStream, mediapipe::Adopt(gpu_frame.release())
-                                          .At(mediapipe::Timestamp(frame_timestamp_us)));
-                    ABSL_LOG(INFO) << status;
-                    // );
-                    return absl::OkStatus();
-                }));
+            size_t frame_timestamp_us = (double)cv::getTickCount() / (double)cv::getTickFrequency() * 1e6;
 
-            // Get the graph result packet, or stop if that fails.
-            mediapipe::Packet packet;
-            if (!poller->Next(&packet)) {
-                ABSL_LOG(INFO) << "Break on empty packet.";
-                break;
-            }
-            std::unique_ptr<mediapipe::ImageFrame> output_frame;
+			cv::Mat output_frame_mat;
+			MP_RETURN_IF_ERROR(ProcessFrame(camera_frame, frame_timestamp_us, output_frame_mat));
 
-            // Convert GpuBuffer to ImageFrame.
-            MP_RETURN_IF_ERROR(
-                gpu_helper.RunInGlContext(
-                    [&packet, &output_frame, this]() -> absl::Status {
-                        auto &gpu_frame = packet.Get<mediapipe::GpuBuffer>();
-                        auto texture = this->gpu_helper.CreateSourceTexture(gpu_frame);
-                        output_frame = absl::make_unique<mediapipe::ImageFrame>(
-                            mediapipe::ImageFormatForGpuBufferFormat(gpu_frame.format()),
-                            gpu_frame.width(), gpu_frame.height(),
-                            mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
-                        this->gpu_helper.BindFramebuffer(texture);
-                        const auto info = mediapipe::GlTextureInfoForGpuBufferFormat(
-                            gpu_frame.format(), 0, gpu_helper.GetGlVersion());
-                        glReadPixels(0, 0, texture.width(), texture.height(), info.gl_format,
-                                     info.gl_type, output_frame->MutablePixelData());
-                        glFlush();
-                        texture.Release();
-                        return absl::OkStatus();
-                    }));
-
-            // Convert back to opencv for display or saving.
-            cv::Mat output_frame_mat = mediapipe::formats::MatView(output_frame.get());
-            if (output_frame_mat.channels() == 4)
-                cv::cvtColor(output_frame_mat, output_frame_mat, cv::COLOR_RGBA2BGR);
-            else
-                cv::cvtColor(output_frame_mat, output_frame_mat, cv::COLOR_RGB2BGR);
+            // Wrap Mat into an ImageFrame.
             if (save_video) {
                 if (!writer.isOpened()) {
                     ABSL_LOG(INFO) << "Prepare video writer.";
