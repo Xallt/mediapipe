@@ -105,16 +105,18 @@ void SimpleVideoReader::setResolution(int width, int height) {
 
 class MPPGraphRunner {
    public:
-    absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
-        ABSL_LOG(INFO) << "Initialize the calculator graph.";
-
+    absl::Status InitMPPGraph(std::string calculator_graph_config_file) {
         MP_RETURN_IF_ERROR(CreateGraphFromFile(calculator_graph_config_file, graph));
 
-        ABSL_LOG(INFO) << "Initialize the GPU.";
         MP_ASSIGN_OR_RETURN(auto gpu_resources, mediapipe::GpuResources::Create());
         MP_RETURN_IF_ERROR(graph.SetGpuResources(std::move(gpu_resources)));
 
         gpu_helper.InitializeForTest(graph.GetGpuResources().get());
+		return absl::OkStatus();
+	}
+    absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+        ABSL_LOG(INFO) << "Initialize the calculator graph.";
+        MP_RETURN_IF_ERROR(InitMPPGraph(calculator_graph_config_file));
 
         ABSL_LOG(INFO) << "Initialize the camera or load the video.";
         if (input_video_path.empty())
