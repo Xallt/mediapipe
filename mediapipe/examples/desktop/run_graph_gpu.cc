@@ -100,19 +100,17 @@ void SimpleVideoReader::setResolution(int width, int height) {
 }
 
 class MPPGraphRunner {
-	public:
+public:
 	absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
 
         ABSL_LOG(INFO) << "Initialize the calculator graph.";
 
-        mediapipe::CalculatorGraph graph;
         MP_RETURN_IF_ERROR(CreateGraphFromFile(calculator_graph_config_file, graph));
 
         ABSL_LOG(INFO) << "Initialize the GPU.";
         MP_ASSIGN_OR_RETURN(auto gpu_resources, mediapipe::GpuResources::Create());
         MP_RETURN_IF_ERROR(graph.SetGpuResources(std::move(gpu_resources)));
 
-        mediapipe::GlCalculatorHelper gpu_helper;
         gpu_helper.InitializeForTest(graph.GetGpuResources().get());
 
         ABSL_LOG(INFO) << "Initialize the camera or load the video.";
@@ -154,16 +152,15 @@ class MPPGraphRunner {
     size_t frame_timestamp_us =
         (double)cv::getTickCount() / (double)cv::getTickFrequency() * 1e6;
     MP_RETURN_IF_ERROR(
-        gpu_helper.RunInGlContext([&input_frame, &frame_timestamp_us, &graph,
-                                  &gpu_helper]() -> absl::Status {
+        gpu_helper.RunInGlContext([&input_frame, &frame_timestamp_us, this]() -> absl::Status {
             // Convert ImageFrame to GpuBuffer.
-            auto texture = gpu_helper.CreateSourceTexture(*input_frame.get());
+            auto texture = this->gpu_helper.CreateSourceTexture(*input_frame.get());
             auto gpu_frame = texture.GetFrame<mediapipe::GpuBuffer>();
             glFlush();
             texture.Release();
             // Send GPU image packet into the graph.
             // MP_RETURN_IF_ERROR(
-            auto status = graph.AddPacketToInputStream(
+            auto status = this->graph.AddPacketToInputStream(
                 kInputStream, mediapipe::Adopt(gpu_frame.release())
                                   .At(mediapipe::Timestamp(frame_timestamp_us)));
             ABSL_LOG(INFO) << status;
@@ -183,14 +180,14 @@ class MPPGraphRunner {
     // Convert GpuBuffer to ImageFrame.
     MP_RETURN_IF_ERROR(
         gpu_helper.RunInGlContext(
-            [&packet, &output_frame, &gpu_helper]() -> absl::Status {
+            [&packet, &output_frame, this]() -> absl::Status {
                 auto& gpu_frame = packet.Get<mediapipe::GpuBuffer>();
-                auto texture = gpu_helper.CreateSourceTexture(gpu_frame);
+                auto texture = this->gpu_helper.CreateSourceTexture(gpu_frame);
                 output_frame = absl::make_unique<mediapipe::ImageFrame>(
                     mediapipe::ImageFormatForGpuBufferFormat(gpu_frame.format()),
                     gpu_frame.width(), gpu_frame.height(),
                     mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
-                gpu_helper.BindFramebuffer(texture);
+                this->gpu_helper.BindFramebuffer(texture);
                 const auto info = mediapipe::GlTextureInfoForGpuBufferFormat(
                     gpu_frame.format(), 0, gpu_helper.GetGlVersion());
                 glReadPixels(0, 0, texture.width(), texture.height(), info.gl_format,
@@ -230,6 +227,9 @@ class MPPGraphRunner {
   MP_RETURN_IF_ERROR(graph.CloseInputStream(kInputStream));
   return graph.WaitUntilDone();
 	}
+private:
+	mediapipe::CalculatorGraph graph;
+	mediapipe::GlCalculatorHelper gpu_helper;
 };
 
 SimpleMPPGraphRunner::SimpleMPPGraphRunner() {}
