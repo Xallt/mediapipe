@@ -112,10 +112,15 @@ class MPPGraphRunner {
         MP_RETURN_IF_ERROR(graph.SetGpuResources(std::move(gpu_resources)));
 
         gpu_helper.InitializeForTest(graph.GetGpuResources().get());
+
+        MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller_tmp,
+                            graph.AddOutputStreamPoller(kOutputStream));
+        poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(poller_tmp));
+        MP_RETURN_IF_ERROR(graph.StartRun({}));
 		return absl::OkStatus();
 	}
     absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
-        ABSL_LOG(INFO) << "Initialize the calculator graph.";
+        ABSL_LOG(INFO) << "Initialize&Start the calculator graph.";
         MP_RETURN_IF_ERROR(InitMPPGraph(calculator_graph_config_file));
 
         ABSL_LOG(INFO) << "Initialize the camera or load the video.";
@@ -133,12 +138,6 @@ class MPPGraphRunner {
             capture.setFPS(30);
 #endif
         }
-
-        ABSL_LOG(INFO) << "Start running the calculator graph.";
-        MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller_tmp,
-                            graph.AddOutputStreamPoller(kOutputStream));
-        poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(poller_tmp));
-        MP_RETURN_IF_ERROR(graph.StartRun({}));
 
         ABSL_LOG(INFO) << "Start grabbing and processing frames.";
         bool grab_frames = true;
