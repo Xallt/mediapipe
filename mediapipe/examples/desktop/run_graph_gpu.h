@@ -24,6 +24,7 @@
 #include "absl/flags/parse.h"
 #include "absl/log/absl_log.h"
 #include "absl/status/status.h"
+#include <opencv2/opencv.hpp>
 
 class SimpleMPPGraphRunner {
 public:

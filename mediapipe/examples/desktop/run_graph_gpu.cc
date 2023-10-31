@@ -35,6 +35,10 @@
 #include "mediapipe/gpu/gpu_shared_data_internal.h"
 #include "mediapipe/util/resource_util.h"
 
+// include for cv::Mat and cv::Capture
+#include <opencv2/opencv.hpp>
+
+
 constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
@@ -101,7 +105,6 @@ void SimpleVideoReader::setResolution(int width, int height) {
 
 class MPPGraphRunner {
    public:
-    std::unique_ptr<mediapipe::OutputStreamPoller> poller;
     absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
         ABSL_LOG(INFO) << "Initialize the calculator graph.";
 
@@ -123,10 +126,10 @@ class MPPGraphRunner {
         const bool save_video = !output_video_path.empty();
         if (!save_video) {
             cv::namedWindow(kWindowName, /*flags=WINDOW_AUTOSIZE*/ 1);
-			#if (CV_MAJOR_VERSION >= 3) && (CV_MINOR_VERSION >= 2)
-				capture.setResolution(640, 480);
-				capture.setFPS(30);
-			#endif
+#if (CV_MAJOR_VERSION >= 3) && (CV_MINOR_VERSION >= 2)
+            capture.setResolution(640, 480);
+            capture.setFPS(30);
+#endif
         }
 
         ABSL_LOG(INFO) << "Start running the calculator graph.";
@@ -229,6 +232,7 @@ class MPPGraphRunner {
    private:
     mediapipe::CalculatorGraph graph;
     mediapipe::GlCalculatorHelper gpu_helper;
+    std::unique_ptr<mediapipe::OutputStreamPoller> poller;
 };
 
 SimpleMPPGraphRunner::SimpleMPPGraphRunner() {}
