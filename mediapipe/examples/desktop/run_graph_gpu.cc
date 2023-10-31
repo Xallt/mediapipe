@@ -99,8 +99,10 @@ void SimpleVideoReader::setResolution(int width, int height) {
     capture.set(cv::CAP_PROP_FRAME_HEIGHT, height);
 }
 
-    SimpleMPPGraphRunner::SimpleMPPGraphRunner() {}
-    absl::Status SimpleMPPGraphRunner::RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+class MPPGraphRunner {
+	public:
+	absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+
         ABSL_LOG(INFO) << "Initialize the calculator graph.";
 
         mediapipe::CalculatorGraph graph;
@@ -227,4 +229,11 @@ void SimpleVideoReader::setResolution(int width, int height) {
   if (writer.isOpened()) writer.release();
   MP_RETURN_IF_ERROR(graph.CloseInputStream(kInputStream));
   return graph.WaitUntilDone();
-    }
+	}
+};
+
+SimpleMPPGraphRunner::SimpleMPPGraphRunner() {}
+absl::Status SimpleMPPGraphRunner::RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+	MPPGraphRunner runner;
+	return runner.RunMPPGraph(calculator_graph_config_file, input_video_path, output_video_path);
+}
