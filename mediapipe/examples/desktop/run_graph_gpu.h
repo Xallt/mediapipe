@@ -20,29 +20,12 @@
 #include <cstdlib>
 #include <string>
 
-#include "absl/flags/flag.h"
-#include "absl/flags/parse.h"
-#include "absl/log/absl_log.h"
-#include "absl/status/status.h"
 #include <opencv2/opencv.hpp>
 
 class SimpleMPPGraphRunner {
 public:
     SimpleMPPGraphRunner();
-    absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path);
-};
-class SimpleVideoReader {
-public:
-   SimpleVideoReader();
-   ~SimpleVideoReader();
-   absl::Status init(std::string url, bool flipFrame = false);
-   absl::Status getFrame(cv::Mat &frame);
-   double getFPS();
-   void setFPS(double fps);
-   void setResolution(int width, int height);
-private:
-    cv::VideoCapture capture;
-    bool flipFrame;
+    bool RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path);
 };
 
 #endif // RUN_GRAPH_GPU_H

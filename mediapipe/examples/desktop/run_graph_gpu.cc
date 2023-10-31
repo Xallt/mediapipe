@@ -56,6 +56,19 @@ absl::Status CreateGraphFromFile(std::string calculator_graph_config_file, media
     return absl::OkStatus();
 }
 
+class SimpleVideoReader {
+public:
+   SimpleVideoReader();
+   ~SimpleVideoReader();
+   absl::Status init(std::string url, bool flipFrame = false);
+   absl::Status getFrame(cv::Mat &frame);
+   double getFPS();
+   void setFPS(double fps);
+   void setResolution(int width, int height);
+private:
+    cv::VideoCapture capture;
+    bool flipFrame;
+};
 // SimpleVideoWrapper class for video input from webcam / video file
 SimpleVideoReader::SimpleVideoReader() {}
 
@@ -239,7 +252,8 @@ class MPPGraphRunner {
 };
 
 SimpleMPPGraphRunner::SimpleMPPGraphRunner() {}
-absl::Status SimpleMPPGraphRunner::RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+bool SimpleMPPGraphRunner::RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
     MPPGraphRunner runner;
-    return runner.RunMPPGraph(calculator_graph_config_file, input_video_path, output_video_path);
+    absl::Status status = runner.RunMPPGraph(calculator_graph_config_file, input_video_path, output_video_path);
+    return status.ok();
 }
