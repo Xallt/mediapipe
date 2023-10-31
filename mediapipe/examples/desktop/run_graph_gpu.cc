@@ -101,28 +101,28 @@ void SimpleVideoReader::setResolution(int width, int height) {
 
 class MPPGraphRunner {
 public:
-	absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+ std::unique_ptr<mediapipe::OutputStreamPoller> poller;
+ absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
+     ABSL_LOG(INFO) << "Initialize the calculator graph.";
 
-        ABSL_LOG(INFO) << "Initialize the calculator graph.";
+     MP_RETURN_IF_ERROR(CreateGraphFromFile(calculator_graph_config_file, graph));
 
-        MP_RETURN_IF_ERROR(CreateGraphFromFile(calculator_graph_config_file, graph));
+     ABSL_LOG(INFO) << "Initialize the GPU.";
+     MP_ASSIGN_OR_RETURN(auto gpu_resources, mediapipe::GpuResources::Create());
+     MP_RETURN_IF_ERROR(graph.SetGpuResources(std::move(gpu_resources)));
 
-        ABSL_LOG(INFO) << "Initialize the GPU.";
-        MP_ASSIGN_OR_RETURN(auto gpu_resources, mediapipe::GpuResources::Create());
-        MP_RETURN_IF_ERROR(graph.SetGpuResources(std::move(gpu_resources)));
+     gpu_helper.InitializeForTest(graph.GetGpuResources().get());
 
-        gpu_helper.InitializeForTest(graph.GetGpuResources().get());
+     ABSL_LOG(INFO) << "Initialize the camera or load the video.";
+     if (input_video_path.empty())
+         input_video_path = "0";
+     SimpleVideoReader capture;
+     MP_RETURN_IF_ERROR(capture.init(input_video_path, input_video_path == "0"));
 
-        ABSL_LOG(INFO) << "Initialize the camera or load the video.";
-        if (input_video_path.empty())
-            input_video_path = "0";
-        SimpleVideoReader capture;
-        MP_RETURN_IF_ERROR(capture.init(input_video_path, input_video_path == "0"));
-
-        cv::VideoWriter writer;
-        const bool save_video = !output_video_path.empty();
-        if (!save_video) {
-            cv::namedWindow(kWindowName, /*flags=WINDOW_AUTOSIZE*/ 1);
+     cv::VideoWriter writer;
+     const bool save_video = !output_video_path.empty();
+     if (!save_video) {
+         cv::namedWindow(kWindowName, /*flags=WINDOW_AUTOSIZE*/ 1);
 #if (CV_MAJOR_VERSION >= 3) && (CV_MINOR_VERSION >= 2)
     capture.setResolution(640, 480);
     capture.setFPS(30);
@@ -130,8 +130,9 @@ public:
   }
 
   ABSL_LOG(INFO) << "Start running the calculator graph.";
-  MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller,
+  MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller_tmp,
                       graph.AddOutputStreamPoller(kOutputStream));
+  poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(poller_tmp));
   MP_RETURN_IF_ERROR(graph.StartRun({}));
 
   ABSL_LOG(INFO) << "Start grabbing and processing frames.";
@@ -171,7 +172,7 @@ public:
 
     // Get the graph result packet, or stop if that fails.
     mediapipe::Packet packet;
-    if (!poller.Next(&packet)) {
+    if (!poller->Next(&packet)) {
       ABSL_LOG(INFO) << "Break on empty packet.";
       break;
     }
@@ -226,7 +227,8 @@ public:
   if (writer.isOpened()) writer.release();
   MP_RETURN_IF_ERROR(graph.CloseInputStream(kInputStream));
   return graph.WaitUntilDone();
-	}
+ }
+
 private:
 	mediapipe::CalculatorGraph graph;
 	mediapipe::GlCalculatorHelper gpu_helper;
