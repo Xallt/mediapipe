@@ -18,14 +18,25 @@
 #define RUN_GRAPH_GPU_H
 
 #include <cstdlib>
+#include <opencv2/opencv.hpp>
 #include <string>
 
-#include <opencv2/opencv.hpp>
-
-class SimpleMPPGraphRunner {
-public:
-    SimpleMPPGraphRunner();
-    bool RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path);
+struct LandmarkList {
+    std::vector<cv::Point3f> landmarks;
+    std::vector<float> presence;
+    std::vector<float> visibility;
 };
 
-#endif // RUN_GRAPH_GPU_H
+class SimpleMPPGraphRunner {
+   public:
+    SimpleMPPGraphRunner();
+    ~SimpleMPPGraphRunner();
+    bool RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path);
+    bool InitMPPGraph(std::string calculator_graph_config_file);
+    bool ProcessFrame(cv::Mat &camera_frame, size_t frame_timestamp_us, cv::Mat &output_frame_mat, std::vector<LandmarkList> &landmarks, bool &landmark_presence);
+
+   private:
+    void* runnerVoid;
+};
+
+#endif  // RUN_GRAPH_GPU_H

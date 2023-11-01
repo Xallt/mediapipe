@@ -281,10 +281,48 @@ class MPPGraphRunner {
 
 SimpleMPPGraphRunner::SimpleMPPGraphRunner() {}
 bool SimpleMPPGraphRunner::RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
-    MPPGraphRunner runner;
+    runnerVoid = (void *)new MPPGraphRunner();
+    MPPGraphRunner &runner = *(MPPGraphRunner *)runnerVoid;
     absl::Status status = runner.RunMPPGraph(calculator_graph_config_file, input_video_path, output_video_path);
-	if (!status.ok())
-		std::cout << "Failed to run the graph: " << status.message() << std::endl;
-	
+    if (!status.ok())
+        std::cout << "Failed to run the graph: " << status.message() << std::endl;
+
     return status.ok();
+}
+bool SimpleMPPGraphRunner::InitMPPGraph(std::string calculator_graph_config_file) {
+    runnerVoid = (void *)new MPPGraphRunner();
+    MPPGraphRunner &runner = *(MPPGraphRunner *)runnerVoid;
+    absl::Status status = runner.InitMPPGraph(calculator_graph_config_file);
+    if (!status.ok())
+        std::cout << "Failed to initialize the graph: " << status.message() << std::endl;
+
+    return status.ok();
+}
+bool SimpleMPPGraphRunner::ProcessFrame(cv::Mat &camera_frame, size_t frame_timestamp_us, cv::Mat &output_frame_mat, std::vector<LandmarkList> &landmarks, bool &landmark_presence) {
+    MPPGraphRunner &runner = *(MPPGraphRunner *)runnerVoid;
+    std::vector<NormalizedLandmarkList> landmarks_tmp;
+    absl::Status status = runner.ProcessFrame(camera_frame, frame_timestamp_us, output_frame_mat, landmarks_tmp, landmark_presence);
+    if (!status.ok()) {
+        std::cout << "Failed to process the frame: " << status.message() << std::endl;
+        return false;
+    }
+
+    landmarks.resize(landmarks_tmp.size());
+    for (int i = 0; i < landmarks_tmp.size(); i++) {
+        landmarks[i].landmarks.resize(landmarks_tmp[i].landmark_size());
+        landmarks[i].presence.resize(landmarks_tmp[i].landmark_size());
+        landmarks[i].visibility.resize(landmarks_tmp[i].landmark_size());
+        for (int j = 0; j < landmarks_tmp[i].landmark_size(); j++) {
+            landmarks[i].landmarks[j].x = landmarks_tmp[i].landmark(j).x();
+            landmarks[i].landmarks[j].y = landmarks_tmp[i].landmark(j).y();
+            landmarks[i].landmarks[j].z = landmarks_tmp[i].landmark(j).z();
+            landmarks[i].presence[j] = landmarks_tmp[i].landmark(j).presence();
+            landmarks[i].visibility[j] = landmarks_tmp[i].landmark(j).visibility();
+        }
+    }
+
+	return status.ok();
+}
+SimpleMPPGraphRunner::~SimpleMPPGraphRunner() {
+	delete (MPPGraphRunner *)runnerVoid;
 }
