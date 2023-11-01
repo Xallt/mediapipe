@@ -57,15 +57,16 @@ absl::Status CreateGraphFromFile(std::string calculator_graph_config_file, media
 }
 
 class SimpleVideoReader {
-public:
-   SimpleVideoReader();
-   ~SimpleVideoReader();
-   absl::Status init(std::string url, bool flipFrame = false);
-   absl::Status getFrame(cv::Mat &frame);
-   double getFPS();
-   void setFPS(double fps);
-   void setResolution(int width, int height);
-private:
+   public:
+    SimpleVideoReader();
+    ~SimpleVideoReader();
+    absl::Status init(std::string url, bool flipFrame = false);
+    absl::Status getFrame(cv::Mat &frame);
+    double getFPS();
+    void setFPS(double fps);
+    void setResolution(int width, int height);
+
+   private:
     cv::VideoCapture capture;
     bool flipFrame;
 };
@@ -186,7 +187,7 @@ class MPPGraphRunner {
         else
             cv::cvtColor(output_frame_mat, output_frame_mat, cv::COLOR_RGB2BGR);
 
-		return absl::OkStatus();
+        return absl::OkStatus();
     }
     absl::Status RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
         ABSL_LOG(INFO) << "Initialize&Start the calculator graph.";
@@ -218,8 +219,8 @@ class MPPGraphRunner {
             // Prepare and add graph input packet.
             size_t frame_timestamp_us = (double)cv::getTickCount() / (double)cv::getTickFrequency() * 1e6;
 
-			cv::Mat output_frame_mat;
-			MP_RETURN_IF_ERROR(ProcessFrame(camera_frame, frame_timestamp_us, output_frame_mat));
+            cv::Mat output_frame_mat;
+            MP_RETURN_IF_ERROR(ProcessFrame(camera_frame, frame_timestamp_us, output_frame_mat));
 
             // Wrap Mat into an ImageFrame.
             if (save_video) {
