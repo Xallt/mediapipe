@@ -24,6 +24,7 @@
 #include "mediapipe/framework/calculator_framework.h"
 #include "mediapipe/framework/formats/image_frame.h"
 #include "mediapipe/framework/formats/image_frame_opencv.h"
+#include "mediapipe/framework/formats/landmark.pb.h"
 #include "mediapipe/framework/port/file_helpers.h"
 #include "mediapipe/framework/port/opencv_highgui_inc.h"
 #include "mediapipe/framework/port/opencv_imgproc_inc.h"
@@ -38,8 +39,9 @@
 // include for cv::Mat and cv::Capture
 #include <opencv2/opencv.hpp>
 
+#define NormalizedLandmarkList ::mediapipe::NormalizedLandmarkList
+
 constexpr char kInputStream[] = "input_video";
-constexpr char kOutputStream[] = "output_video";
 constexpr char kWindowName[] = "MediaPipe";
 
 absl::Status CreateGraphFromFile(std::string calculator_graph_config_file, mediapipe::CalculatorGraph &graph) {
@@ -116,6 +118,9 @@ void SimpleVideoReader::setResolution(int width, int height) {
     capture.set(cv::CAP_PROP_FRAME_HEIGHT, height);
 }
 
+const char kVideoOutputStream[] = "output_video";
+const char kLandmarksOutputStream[] = "hand_landmarks";
+const char kLandmarkPresenceOutputStream[] = "landmark_presence";
 class MPPGraphRunner {
    public:
     absl::Status InitMPPGraph(std::string calculator_graph_config_file) {
@@ -126,13 +131,21 @@ class MPPGraphRunner {
 
         gpu_helper.InitializeForTest(graph.GetGpuResources().get());
 
-        MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller_tmp,
-                            graph.AddOutputStreamPoller(kOutputStream));
-        poller = std::make_unique<mediapipe::OutputStreamPoller>(std::move(poller_tmp));
+        MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller_video_tmp,
+                            graph.AddOutputStreamPoller(kVideoOutputStream));
+        poller_video = std::make_unique<mediapipe::OutputStreamPoller>(std::move(poller_video_tmp));
+
+        MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller_landmarks_tmp,
+                            graph.AddOutputStreamPoller(kLandmarksOutputStream));
+        poller_landmarks = std::make_unique<mediapipe::OutputStreamPoller>(std::move(poller_landmarks_tmp));
+
+        MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller_landmark_presence_tmp,
+                            graph.AddOutputStreamPoller(kLandmarkPresenceOutputStream));
+        poller_landmark_presence = std::make_unique<mediapipe::OutputStreamPoller>(std::move(poller_landmark_presence_tmp));
         MP_RETURN_IF_ERROR(graph.StartRun({}));
         return absl::OkStatus();
     }
-    absl::Status ProcessFrame(cv::Mat &camera_frame, size_t frame_timestamp_us, cv::Mat &output_frame_mat) {
+    absl::Status ProcessFrame(cv::Mat &camera_frame, size_t frame_timestamp_us, cv::Mat &output_frame_mat, std::vector<NormalizedLandmarkList> &landmarks, bool &landmark_presence) {
         auto input_frame = absl::make_unique<mediapipe::ImageFrame>(
             mediapipe::ImageFormat::SRGBA, camera_frame.cols, camera_frame.rows,
             mediapipe::ImageFrame::kGlDefaultAlignmentBoundary);
@@ -156,15 +169,25 @@ class MPPGraphRunner {
             }));
 
         // Get the graph result packet, or stop if that fails.
-        mediapipe::Packet packet;
-        poller->Next(&packet);
+        mediapipe::Packet packet_video, packet_landmarks, packet_landmark_presence;
+        poller_video->Next(&packet_video);
+
+        poller_landmark_presence->Next(&packet_landmark_presence);
+        landmark_presence = packet_landmark_presence.Get<bool>();
+        if (landmark_presence) {
+            poller_landmarks->Next(&packet_landmarks);
+            landmarks = packet_landmarks.Get<std::vector<NormalizedLandmarkList>>();
+        }
+
         std::unique_ptr<mediapipe::ImageFrame> output_frame;
+
+        // landmarks = packet_landmarks.Get<std::vector<NormalizedLandmarkList>>();
 
         // Convert GpuBuffer to ImageFrame.
         MP_RETURN_IF_ERROR(
             gpu_helper.RunInGlContext(
-                [&packet, &output_frame, this]() -> absl::Status {
-                    auto &gpu_frame = packet.Get<mediapipe::GpuBuffer>();
+                [&packet_video, &output_frame, this]() -> absl::Status {
+                    auto &gpu_frame = packet_video.Get<mediapipe::GpuBuffer>();
                     auto texture = this->gpu_helper.CreateSourceTexture(gpu_frame);
                     output_frame = absl::make_unique<mediapipe::ImageFrame>(
                         mediapipe::ImageFormatForGpuBufferFormat(gpu_frame.format()),
@@ -220,7 +243,9 @@ class MPPGraphRunner {
             size_t frame_timestamp_us = (double)cv::getTickCount() / (double)cv::getTickFrequency() * 1e6;
 
             cv::Mat output_frame_mat;
-            MP_RETURN_IF_ERROR(ProcessFrame(camera_frame, frame_timestamp_us, output_frame_mat));
+            std::vector<NormalizedLandmarkList> landmarks;
+            bool landmark_presence;
+            MP_RETURN_IF_ERROR(ProcessFrame(camera_frame, frame_timestamp_us, output_frame_mat, landmarks, landmark_presence));
 
             // Wrap Mat into an ImageFrame.
             if (save_video) {
@@ -249,12 +274,17 @@ class MPPGraphRunner {
    private:
     mediapipe::CalculatorGraph graph;
     mediapipe::GlCalculatorHelper gpu_helper;
-    std::unique_ptr<mediapipe::OutputStreamPoller> poller;
+    std::unique_ptr<mediapipe::OutputStreamPoller> poller_video;
+    std::unique_ptr<mediapipe::OutputStreamPoller> poller_landmarks;
+    std::unique_ptr<mediapipe::OutputStreamPoller> poller_landmark_presence;
 };
 
 SimpleMPPGraphRunner::SimpleMPPGraphRunner() {}
 bool SimpleMPPGraphRunner::RunMPPGraph(std::string calculator_graph_config_file, std::string input_video_path, std::string output_video_path) {
     MPPGraphRunner runner;
     absl::Status status = runner.RunMPPGraph(calculator_graph_config_file, input_video_path, output_video_path);
+	if (!status.ok())
+		std::cout << "Failed to run the graph: " << status.message() << std::endl;
+	
     return status.ok();
 }

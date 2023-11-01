@@ -80,7 +80,8 @@ cc_library(
         "//mediapipe/util:resource_util",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log:absl_log"
+        "@com_google_absl//absl/log:absl_log",
+        "//mediapipe/framework/formats:landmark_cc_proto",
     ],
     alwayslink=1
 )
@@ -91,6 +92,7 @@ cc_binary(
     deps=[
         ":run_graph_main_gpu_linux",
         "//mediapipe/graphs/hand_tracking:mobile_calculators",
+        "//mediapipe/calculators/core:packet_presence_calculator",
     ],
     data = [
         "//mediapipe/modules/hand_landmark:hand_landmark_full.tflite",
